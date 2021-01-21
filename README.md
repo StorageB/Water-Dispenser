@@ -21,11 +21,16 @@ This project is an for an electronic water dispenser connected to an under count
 There are three different versions of the code posted for the ESP8266:
 
 1. [Version 1](https://github.com/StorageB/Water-Dispenser/blob/master/main_v1.cpp) - Basic Functionality 
-This includes the most basic operation for one sensor and can be used without an internet connection. It will open the valve and fade on the lights when an object is detected or when the button is pressed.
+
+   This includes the most basic operation for one sensor and can be used without an internet connection. It will open the valve and fade on the lights when an object is detected or when the button is pressed.
+
 2. [Version 2](https://github.com/StorageB/Water-Dispenser/blob/master/main_v2.cpp) - Google Sheets logging
-This version has the same functionality as version 1, but includes code for over the air (OTA) programming of the ESP8266 and for logging water usage data directly to Google Sheets
+
+   This version has the same functionality as version 1, but includes code for over the air (OTA) programming of the ESP8266 and for logging water usage data directly to Google Sheets
+
 3. [Version 3](https://github.com/StorageB/Water-Dispenser/blob/master/main_v3.cpp) - Current version 
-This is the most recent version, and includes the code for all of the features listed above in the Project Description.
+
+   This is the most recent version, and includes the code for all of the features listed above in the Project Description.
 
 A tutorial for how to log data to Google Sheets without the use of a third party service can be found here:
 https://github.com/StorageB/Google-Sheets-Logging
