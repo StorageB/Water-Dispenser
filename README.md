@@ -34,13 +34,13 @@ https://github.com/StorageB/Google-Sheets-Logging
 
 ### Project Information
 
-[wiring diagram](https://github.com/StorageB/Water-Dispenser/blob/master/wiring-diagram.pdf)
+* [wiring diagram](https://github.com/StorageB/Water-Dispenser/blob/master/wiring-diagram.pdf)
 
-[parts list](https://github.com/StorageB/Water-Dispenser/blob/master/parts-list.md)
+* [parts list](https://github.com/StorageB/Water-Dispenser/blob/master/parts-list.md)
 
-[3D printed enclosure stl file](https://github.com/StorageB/Water-Dispenser/blob/master/Enclosure.stl)
+* [3D printed enclosure stl file](https://github.com/StorageB/Water-Dispenser/blob/master/Enclosure.stl)
 
-[picture gallery](www.imgur.com)
+* [picture gallery](www.imgur.com)
 
 
 
