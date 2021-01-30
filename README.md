@@ -17,7 +17,18 @@ This project is an for an electronic water dispenser connected to an under count
 - Automatic LED dimming at night based on time of day scheduling 
 - 3D printed enclosure for hidden mounting under a cabinet
 
+### Project Information
+
+* [wiring diagram](https://github.com/StorageB/Water-Dispenser/blob/master/wiring-diagram.pdf)
+
+* [parts list](https://github.com/StorageB/Water-Dispenser/blob/master/parts-list.md)
+
+* [3D printed enclosure stl file](https://github.com/StorageB/Water-Dispenser/blob/master/Enclosure.stl)
+
+* [picture gallery](http://imgur.com/a/mHQLtMX)
+
 ### Code
+
 There are three different versions of the code posted for the ESP8266:
 
 1. [Version 1](https://github.com/StorageB/Water-Dispenser/blob/master/main_v1.cpp) - Basic Functionality 
@@ -37,15 +48,6 @@ https://github.com/StorageB/Google-Sheets-Logging
 
 
 
-### Project Information
-
-* [wiring diagram](https://github.com/StorageB/Water-Dispenser/blob/master/wiring-diagram.pdf)
-
-* [parts list](https://github.com/StorageB/Water-Dispenser/blob/master/parts-list.md)
-
-* [3D printed enclosure stl file](https://github.com/StorageB/Water-Dispenser/blob/master/Enclosure.stl)
-
-* [picture gallery](www.imgur.com)
 
 
 
