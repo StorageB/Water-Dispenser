@@ -23,7 +23,7 @@ This project is an for an electronic water dispenser connected to an under count
 
 * [parts list](https://github.com/StorageB/Water-Dispenser/blob/master/parts-list.md)
 
-* [3D printed enclosure stl file](https://github.com/StorageB/Water-Dispenser/blob/master/Enclosure.stl)
+* [3D printed enclosure](https://github.com/StorageB/Water-Dispenser/blob/master/Enclosure.stl)
 
 * [picture gallery](http://imgur.com/a/mHQLtMX)
 
