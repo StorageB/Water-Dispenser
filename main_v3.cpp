@@ -2,7 +2,7 @@
 //  Automatic Water Dispenser
 //  https://github.com/StorageB/Water-Dispenser
 //
-    #define version_number "v3.2021-01-21-1220"
+    #define version_number "v3.2021-04-19-1112"
 //  ===========================================
 
 
@@ -16,35 +16,37 @@
 #include <NTPClient.h>
 #include <Wire.h>
 #include <ArduinoJson.h>
+#include <Timezone.h>
 
 #define valve_output      D1          // valve output pin
 #define ir1_input         D5          // ir 1 sensor input pin
 #define ir2_input         D6          // ir 2 sensor input pin
-#define switch1_input     D7          // pushbutton switch input pin
+#define switch1_input     D7          // pushbutton input pin
 #define led_pin           D8          // NeoPixel ring signal pin
 
-#define led_count         28          // number of LEDs in NeoPixel strip
+#define led_count         28          // number of LEDs in NeoPixel ring
 #define pwm_intervals     20          // number of intervals in the fade in/out for loops for fading LEDs
 #define ir_input_delay    100         // how long to wait once an IR sensor is triggered before opening valve (to prevent false triggers)
 #define sw_input_delay    30          // how long to wait once switch is pressed before opening valve (debounce)
 #define log_delay         240000      // amount of time to wait before publishing data to Google Sheets
 #define display_off_delay 3000        // amount of time to wait once valve is closed before turning off the display LEDs
 #define error_time        300000      // amount of time valve can be open before automatically turning off and displaying an error (protect against blocked or failed sensor, disconnected or shorted wiring, etc)
-#define minimum_on_delay  200         // amount of time the valve must be open before closing, and amount of time valve must be closed before reopening (prevent rapid on/off switching of valve)
+#define cycle_time        250         // amount of time valve must remain closed before reopening (allow valve to fully close before attempting to reopen and prevent rapid on/off switching of valve)
 #define turn_off_delay    400         // amount of time to wait to turn off valve after sensor no longer detects an object
-#define button_hold_time  1000        // amount of time to hold button down before next button hold function (used to select different automatic dispense preset amounts: 16oz, 24oz, 32oz, etc.)
+#define button_hold_time  850         // amount of time to hold button down before next button hold function (used to select different automatic dispense preset amounts: 16oz, 24oz, 32oz, etc.)
 #define led_blink         700         // amount of time delay between flashing LEDs during auto dispense mode
-#define time_check        300000      // how often to check the time
+#define time_check        300000      // how often to check the time from the NPT server
 #define dim_factor        10          // factor by which to dim the LEDs during afterhours times
-#define afterhours_start  22          // beginning of afterhours time (22 means it starts at 10pm)
-#define afterhours_stop   8           // end of afterhours time (8 means it ends at 8am)
+
+bool debug_mode = false;               // debug mode disables the valve from turning on and enables green lights when publishing (water usage data will still be calculated and published)
+bool display_orange_led = false;      // ***NOTE: need to increase turn_off_delay to ~800 if this is true***     display orange LEDs in IR mode when object is out of sensor range when water is dispensing when set to true
 
 int led_brightness = 255;             // NeoPixel brightness (max = 255)
 int ir1_state;                        // state of IR sensor 1: LOW if object detected, HIGH if no object detected
 int ir2_state;                        // state of IR sensor 2: LOW if object detected, HIGH if no object detected
-int switch1_state;                    // state of pushbutton switch: HIGH if pressed, LOW if not pressed
+int switch1_state;                    // state of pushbutton: HIGH if pressed, LOW if not pressed
 int error_status = 0;                 // used to report an error, set to 0 if no errors
-int current_hour = 0;                 // current hour of the day (0 to 23)
+int current_hour = 12;                // current hour of the day (0 to 23) (value will be set from )
 int total_gallons = 0;                // total gallons of water used  (default value set, but will import value from Google Sheets at startup and after publishing data)
 int oz_target = 128;                  // total ounces daily target    (default value set, but will import value from Google Sheets at startup and after publishing data)
 int filter_change = 500;              // what value to change filter  (default value set, but will import value from Google Sheets at startup and after publishing data)
@@ -55,8 +57,10 @@ int function_2_oz = 0;                // automatic dispense ounces (default valu
 int function_3_oz = 0;                // automatic dispense ounces (default value set, but will import value from Google Sheets at startup and after publishing data)
 int function_4_oz = 0;                // automatic dispense ounces (default value set, but will import value from Google Sheets at startup and after publishing data)
 int function_5_oz = 0;                // automatic dispense ounces (default value set, but will import value from Google Sheets at startup and after publishing data)
-int automatic_dispense_time = 0;      // calculated length of time to keep water on when automatically dispensing
 int automatic_dispense_oz = 0;        // how much water to dispense automatically (based on which amount was selected when the button is held down)
+int automatic_dispense_time = 0;      // calculated length of time to keep water on when automatically dispensing
+int afterhours_start = -1;            // beginning hour of afterhours time (0 to 23, with 0 being midnight and 23 being 11pm, -1 to disable) (default value set, but will import value from Google Sheets at startup and after publishing data)
+int afterhours_stop = -1;             // ending hour of afterhours time    (0 to 23, with 0 being midnight and 23 being 11pm, -1 to disable) (default value set, but will import value from Google Sheets at startup and after publishing data)
 
 bool display_on = false;              // is the display on?
 bool led_on = false;                  // is the LED ring on?
@@ -65,6 +69,7 @@ bool data_published = false;          // has current data been published?
 bool case_off = false;                // is the button function set to off? (the case when the button is held down long enough to cycle through all the preset functions and should now not dispense any water when button is released)
 bool restart_clock = true;            // does the timer used to determine when to check the current time need to be restarted? (has time been checked?)
 bool afterhours = false;              // used for afterhours settings (dim LEDs)
+bool orange_led = false;              // used in fade_out function call if the fade out color should be orange (when using IR sensors) instead of blue (when using push button)
 
 bool button_pressed = false;          // mode of operation: button pressed
 bool auto_dispense = false;           // mode of operation: button pressed and held down for automatic operation using a timer
@@ -74,7 +79,7 @@ unsigned long current_time = 0;       // used to get the current time
 unsigned long timer_start = 0;        // used to start timer to keep track of how long the valve is open
 unsigned long run_time = 0;           // used to calculate how long the valve was open
 unsigned long run_total = 0;          // used to keep track of total run time before publishing time
-unsigned long log_timer = 0;          // used to start timer to determine when to publish data
+unsigned long log_timer = 0;          // used to determine when to publish data
 unsigned long clock_timer = 0;        // used to determine when to check the current time
 unsigned long display_timer = 0;      // used to determine when to turn off the display LEDs
 unsigned long turn_off_timer = 0;     // used to determine when to turn off the value when the IR sensors are no longer triggered 
@@ -94,29 +99,56 @@ const char* ssid = STASSID;
 const char* password = STAPSK;
 
 // Enter Google Script ID here
-const char *GScriptId = "enter_google_script_id_here";
+const char *GScriptId = "enter_google_script_id_here"";
+#define gs_version_number "Version 48" // the version of the Google Scripts deployment listed above (not required, only for printing out version number at boot)
 
 // Enter command and Google Sheets sheet name here
 String payload_base =  "{\"command\": \"insert_row\", \"sheet_name\": \"Sheet1\", \"values\": ";
 String payload = "";
 
-// Information for reading and writing to Google Sheets
+// Information for reading and writing to Google Sheets (do not edit)
 const char* host = "script.google.com";
 const int httpsPort = 443;
 const char* fingerprint = "";
 String url = String("/macros/s/") + GScriptId + "/exec?cal";
-String url3 = String("/macros/s/") + GScriptId + "/exec?cal";//"/exec?read";
 String return_string = "";
 
 // Define HTTPSRedirect client
 HTTPSRedirect* client = nullptr;
 
-// Define NTP Client to get time
-WiFiUDP ntpUDP;
-NTPClient timeClient(ntpUDP, "pool.ntp.org");
+// US Central Time Zone (Chicago, IL)
+TimeChangeRule myDST = {"CDT", Second, Sun, Mar, 2, -300}; // Daylight time = UTC - 5 hours
+TimeChangeRule mySTD = {"CST", First, Sun, Nov, 2, -360};  // Standard time = UTC - 6 hours
+Timezone myTZ(myDST, mySTD);
+TimeChangeRule *tcr; // pointer to the time change rule, use to get TZ abbrev
 
 // Declare NeoPixel strip object
 Adafruit_NeoPixel strip(led_count, led_pin, NEO_GRB + NEO_KHZ800);
+
+
+// Function to return the compile date and time as a time_t value
+time_t compileTime()
+{
+    const time_t FUDGE(10); // fudge factor to allow for compile time (seconds, YMMV)
+    const char *compDate = __DATE__, *compTime = __TIME__, *months = "JanFebMarAprMayJunJulAugSepOctNovDec";
+    char chMon[4], *m;
+    tmElements_t tm;
+
+    strncpy(chMon, compDate, 3);
+    chMon[3] = '\0';
+    m = strstr(months, chMon);
+    tm.Month = ((m - months) / 3 + 1);
+
+    tm.Day = atoi(compDate + 4);
+    tm.Year = atoi(compDate + 7) - 1970;
+    tm.Hour = atoi(compTime);
+    
+    tm.Minute = atoi(compTime + 3);
+    tm.Second = atoi(compTime + 6);
+    time_t t = makeTime(tm);
+    return t + FUDGE; // add fudge factor to allow for compile time
+}
+
 
 void setup() {
   
@@ -147,11 +179,13 @@ void setup() {
   Serial.println("");
   Serial.print("Water Dispenser ");
   Serial.println(version_number);
+  Serial.print("Google Scripts deployment: ");
+  Serial.println(gs_version_number);
 
-  // Initialize a NTPClient to get time
-  timeClient.begin();
-  timeClient.setTimeOffset(3600 * -6); // set offset time in seconds to adjust for time zone (Central Time Zone = -6)
+  // Set the time
+  setTime(myTZ.toUTC(compileTime()));
   
+
   // ----- Required for OTA programming -----
 
   Serial.println("Booting");
@@ -193,9 +227,9 @@ void setup() {
     }
   });
   ArduinoOTA.begin();
-  Serial.println("Ready");
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
+
 
   // ----- Required for writing to Google Sheets -----
 
@@ -238,6 +272,19 @@ void setup() {
   }
 
   Serial.println("Ready");
+}
+
+
+// Format and print a time_t value with a time zone appended, assign the local time zone and daylight savings adjusted hour to current_hour
+void printDateTime(time_t t, const char *tz)
+{
+    char buf[32];
+    char m[4];    // temporary storage for month string (DateStrings.cpp uses shared buffer)
+    strcpy(m, monthShortStr(month(t)));
+    sprintf(buf, "%.2d:%.2d:%.2d %s %.2d %s %d %s",
+        hour(t), minute(t), second(t), dayShortStr(weekday(t)), day(t), m, year(t), tz);
+    Serial.println(buf);
+    current_hour =  hour(t);
 }
 
 
@@ -290,7 +337,11 @@ void fade_out(String fade_color, int wait) {
       if (fade_color == "purple") {
         if (!afterhours) {strip.setPixelColor(j,brightness,0,brightness);}
         if (afterhours)  {strip.setPixelColor(j,brightness/dim_factor,0,brightness/dim_factor);}
-      }        
+      }
+      if (fade_color == "orange") {
+        if (!afterhours) {strip.setPixelColor(j,  brightness*0.75,              brightness*0.25,             0);}
+        if (afterhours)  {strip.setPixelColor(j, (brightness/dim_factor)*0.75, (brightness/dim_factor)*0.25, 0);}
+      }         
     }
     strip.show();
     delay(wait);
@@ -298,10 +349,11 @@ void fade_out(String fade_color, int wait) {
   strip.clear();
   strip.show();
   led_on = false;
+  orange_led = false;
 }
 
 
-// Show LED animations or flashing lights if button is held down long enough just for fun
+/*// Show LED animations or flashing lights if button is held down long enough just for fun
 void LED_animation() {
   for (int i = 0; i < 10; i++) {
     fade_in("red", 7);
@@ -313,7 +365,7 @@ void LED_animation() {
     fade_in("blue", 7);
     fade_out("blue", 7);
   }
-}
+}*/
 
 
 // Check the time (get current hour of 0 to 23)
@@ -324,18 +376,48 @@ void check_time() {
   }
   current_time = millis();
   if (current_time - clock_timer > time_check) { // time_check is how often to check the time
-    timeClient.update();
     restart_clock = true;
-    current_hour = timeClient.getHours(); // set the current hour of the day
-    Serial.print("Hour: ");
-    Serial.println(current_hour);
-  }
-  if (current_hour >= afterhours_start || current_hour < afterhours_stop) { // check to see if time is afterhours
-    afterhours = true;
-  }
-  else {
-    afterhours = false;
-  }
+    time_t utc = now();                     // gets current UTC time
+    time_t local = myTZ.toLocal(utc, &tcr); // gets current local time
+    //printDateTime(utc, "UTC");            // sets current_hour and prints UTC time
+    printDateTime(local, tcr -> abbrev);    // sets current_hour and prints local time
+    //Serial.print("current hour: "); Serial.println(current_hour); //current_hour assigned in printDateTime function
+    
+    // Turn afterhours on or off based on current time and inputs from Google Sheets with the following if/elseif block
+    // if afterhours start time or afterhours stop time == -1 disable afterhours functions
+    if (afterhours_start == -1 || afterhours_stop == -1) {
+      afterhours = false;
+      Serial.println("afterhours mode: disabled"); 
+    }
+    // if afterhours start time > afterhours stop time (example: start at hour 23 and end at 8)
+    else if (afterhours_start > afterhours_stop) {
+      if (current_hour >= afterhours_start || current_hour < afterhours_stop) { // check to see if time is during afterhours
+        afterhours = true;
+        Serial.println("afterhours mode: ON"); 
+      }
+      else {
+        afterhours = false;
+        Serial.println("afterhours mode: OFF"); 
+      }
+    }
+    // if afterhours start time == afterhours stop time (example: start at hour 2 and end at 2)
+    else if (afterhours_start == afterhours_stop) {
+      afterhours = false;
+      Serial.println("afterhours mode: OFF"); 
+     
+    }
+    // if afterhours start time < afterhours stop time (example: start at hour 0 and end at 8)
+    else if (afterhours_start < afterhours_stop) {
+      if (current_hour >= afterhours_start && current_hour < afterhours_stop) { // check to see if time is during afterhours
+        afterhours = true;
+        Serial.println("afterhours mode: ON"); 
+      }
+      else {
+        afterhours = false;
+        Serial.println("afterhours mode: OFF"); 
+      }
+    }
+  } 
 }
 
 
@@ -356,10 +438,9 @@ void error() {
     delay(50);
   }
 
-  // error_status 2: could not connect to Google Sheets
+  // error_status 2: could not connect to Google Sheets (only enabled when debug mode is on)
   // allow program to continue and try to publish data again later
-  /*
-  if(error_status == 2) {
+  if(error_status == 2 && debug_mode == true) {
     // flash onboard LED and green NeoPixels
     for(int k = 0; k <= 3; k++) {
       fade_out("green", 1);
@@ -369,7 +450,7 @@ void error() {
     }
     fade_out("green", 1);
     delay(10);
-  }*/
+  }
 
   // error_status 3: filter change warning
   // flash red LEDs then allow program to continue, reset error_status back to zero because the turn_off function will check for change filter each time valve is turned off
@@ -381,8 +462,7 @@ void error() {
       fade_out("red", 7);
       digitalWrite(LED_BUILTIN, LOW);
     }
-    error_status = 0; 
-    delay(5);    
+    error_status = 0;   
   }
 }
 
@@ -390,19 +470,19 @@ void error() {
 // Open valve and turn on NeoPixels
 void turn_on() {
   if (!valve_open) {
+    if (debug_mode == false) {digitalWrite(valve_output, HIGH);} // valve open
     digitalWrite(LED_BUILTIN, LOW);   // LED on
-    digitalWrite(valve_output, HIGH); // valve open
     timer_start = millis();           // time when valve turned on
     blink_time = timer_start;
     valve_open = true;
+    if (debug_mode == true) {Serial.println("**DEBUG MODE**");}
     Serial.print("valve open at ");
     Serial.println(timer_start);
-    delay(minimum_on_delay);
   }
   if (!led_on) {  // turn on blue LEDs
-    fade_in("blue", 0);
+    fade_in("blue", 5);
     display_on = true;
-  }
+  }  
 }
 
 
@@ -414,6 +494,7 @@ void turn_off() {
     current_time = millis();         // get current time
     valve_open = false;
     button_pressed = false;
+    sensor_triggered = false;
     button_press_multiplier = 1; // reset back to 1 after valve is off
     auto_dispense = false;
     Serial.print("valve closed at ");
@@ -424,12 +505,12 @@ void turn_off() {
     Serial.println(" ms");
     run_total = run_total + run_time; // keep track of total time valve has been open until data is published
     display_timer = current_time;
-    delay(minimum_on_delay);
+    delay(cycle_time); // allow valve to fully close before continuing
   }
 }
 
 
-// Publish data to Google Sheets
+// Publish and receive data from Google Sheets
 void publish_data() {
   current_time = millis();
   if (current_time - log_timer > log_delay) {
@@ -450,18 +531,19 @@ void publish_data() {
       Serial.println("Error creating client object!");
     }
 
-    //fade_in("green", 5);//[debugging]
+    if (debug_mode == true) {fade_in("green", 5);}
     payload = payload_base + "\"" + run_total + "\"}"; 
-    
+    Serial.println("");
+    if (debug_mode == true) {Serial.println("**DEBUG MODE**");}
+    Serial.print("payload received: ");
     if(client->POST(url, host, payload)){ // attempt to publish
-      Serial.print("total run time: ");
+      Serial.print("total run time published: ");
       Serial.println(run_total);
-      Serial.println("");
       data_published = true;
       run_total = 0;
       digitalWrite(LED_BUILTIN, HIGH);
       return_string = client->getResponseBody();
-      const size_t capacity = JSON_OBJECT_SIZE(9) + 100; //create json doc and allocate memory (use https://arduinojson.org/v6/assistant/ to determine memory)
+      const size_t capacity = JSON_OBJECT_SIZE(11) + 150; //create json doc and allocate memory (use https://arduinojson.org/v6/assistant/ to determine memory)
       DynamicJsonDocument doc(capacity);
       deserializeJson(doc, return_string ); // get data from Google Sheets json string and assign values to appropriate variables
       total_gallons = doc["gallons"];
@@ -473,14 +555,16 @@ void publish_data() {
       function_3_oz = doc["c"];
       function_4_oz = doc["d"];
       function_5_oz = doc["e"];
+      afterhours_start = doc["afterhours_start"];
+      afterhours_stop = doc["afterhours_stop"];
       Serial.print("total gallons: ");
       Serial.println(total_gallons);
+      Serial.print("filter change: ");
+      Serial.println(filter_change);      
       Serial.print("conversion factor: ");
       Serial.println(conversion_factor, 4);
       Serial.print("oz_target: ");
       Serial.println(oz_target);
-      Serial.print("filter change: ");
-      Serial.println(filter_change);
       Serial.print("automatic dispense presets: ");
       Serial.print(function_1_oz);  
       Serial.print(",");
@@ -491,10 +575,11 @@ void publish_data() {
       Serial.print(function_4_oz);  
       Serial.print(",");
       Serial.println(function_5_oz);  
+      Serial.print("afterhours: from "); Serial.print(afterhours_start); Serial.print(" to "); Serial.println(afterhours_stop);
       Serial.print("payload sent: ");
       Serial.println(payload);
       Serial.println("");
-      //fade_out("green", 5);//[debugging]
+      if (debug_mode == true) {fade_out("green", 5);}
     }
     else { // publish has failed
       error_status = 2;
@@ -520,7 +605,7 @@ void loop() {
   
 
   // Button has been pressed (press on, press off, hold down for automatic dispense functions)
-  if (switch1_state == HIGH) {
+  if (switch1_state == HIGH && !sensor_triggered) {
     delay(sw_input_delay);
     switch1_state = digitalRead(switch1_input);
     if (switch1_state == HIGH) {
@@ -591,24 +676,32 @@ void loop() {
                   button_press_multiplier ++;
                   break;
                 case 7:
-                  Serial.println("Function 7: empty");
+                  Serial.println("Function 7: empty");            
                   button_press_multiplier ++;
                   break;
                 case 8:
-                  Serial.println("Function 8: empty");
+                  Serial.println("Function 8: publish/retrieve data");
+                  fade_in("green", 5);
+                  log_timer = log_delay + 1; // set the log timer greater than the log delay
+                  publish_data();
+                  fade_out("green", 5);
+                  log_timer = millis(); // reset the log timer                     
                   button_press_multiplier ++;
-                  break;
-                case 9:
-                  Serial.println("Function 9: hidden function");
-                  LED_animation(); //just for fun
-                  button_press_multiplier ++;
-                  break;                                
+                  break;                              
                 default: // default case if none of the above cases match
                   break;
               }
-            }  
+            }
+            else{ // publish data if the button has been held down but data has not yet been imported from Google Sheets
+              fade_in("green", 5);
+              case_off = true;
+              log_timer = log_delay + 1; // set the log timer greater than the log delay
+              publish_data();
+              fade_out("green", 5);
+              log_timer = millis(); // reset the log timer
+            }
           }
-          delay(5);  // minimum 5ms delay required to keep from crashing in while loop
+          yield(); // required to keep from crashing in while loop
         } // end while
         
         // when button is released, turn on water unless button was held down to the 'off' function 
@@ -620,6 +713,7 @@ void loop() {
         }
         else {
           turn_on();
+          //not sure what this was doing:   if(!auto_dispense){}    
         }
         
         // if automatically dispensing, calculate how long to leave water on
@@ -633,7 +727,7 @@ void loop() {
         }
 
       }
-      else if (valve_open) {
+      else if (valve_open) {  
         turn_off();
       }
     }
@@ -649,13 +743,13 @@ void loop() {
   }
 
 
-  // If button has been pressed to turn on water, check for error if valve has been left open too long (if pressed and forgotten about)
+  // If button pressed, check for error if valve has been left open too long (if pressed and forgotten about)
   if (valve_open && button_pressed) {
     current_time = millis();
     if (auto_dispense) { // if automatically dispensing, flash LEDs instead of LEDs being solid on to indicate automatic dispense mode is activated
       if (current_time - blink_time > led_blink) {
         digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
-        if (led_on) { fade_out("blue", 1); } else { fade_in("blue", 1); }
+        if (led_on) {fade_out("blue", 1); } else { fade_in("blue", 1);}
         blink_time = current_time;
       }
     }
@@ -664,32 +758,53 @@ void loop() {
 
   // IR sensor has been triggered
   if ((ir1_state == LOW || ir2_state == LOW) && !button_pressed) {
-    delay(ir_input_delay);
-    ir1_state = digitalRead(ir1_input);
-    ir2_state = digitalRead(ir2_input);
+    if (display_orange_led){ // if displaying orange LEDs when object is out of sensor range, this is required to turn LEDs blue when back in range
+      if (led_on) {
+        for(int j = 0; j < strip.numPixels(); j++) {
+          if (!afterhours) {strip.setPixelColor(j,0,0,led_brightness);}
+          if (afterhours)  {strip.setPixelColor(j,0,0,led_brightness/dim_factor);}
+        }
+        strip.show();
+      }
+    }
+    if (!sensor_triggered) { // only delay if the water isn't on yet (prevent false triggers), no need for delay once water is on as that is handled by turn_off_delay
+      delay(ir_input_delay);
+      ir1_state = digitalRead(ir1_input);
+      ir2_state = digitalRead(ir2_input);      
+    }
     if (ir1_state == LOW || ir2_state == LOW) {
       turn_on();
-      sensor_triggered = true;
       turn_off_timer = millis();
+      sensor_triggered = true;
+      if(display_orange_led) {orange_led = true;}
     }    
   }
+
+
   // Turn off water when in IR sensor mode
   if (sensor_triggered && (ir1_state == HIGH && ir2_state == HIGH)) {
+    if(display_orange_led){ // display orange LEDs if object out of sensor range when water is on
+      for(int j = 0; j < strip.numPixels(); j++) {
+        if (!afterhours) {strip.setPixelColor(j,  led_brightness*0.75,              led_brightness*0.25,             0);}
+        if (afterhours)  {strip.setPixelColor(j, (led_brightness/dim_factor)*0.75, (led_brightness/dim_factor)*0.25, 0);}
+      }    
+      strip.show();
+    }
     current_time = millis();
     if (current_time - turn_off_timer > turn_off_delay) {
       turn_off();
-      sensor_triggered = false;
     }
   }
 
 
-  // Turn display LEDs off after valve is closed
+  // Turn display LEDs off after valve is closed and after display_off_delay amount of time has passed after valve cloased
   if (!valve_open && display_on) {
     current_time = millis();
     if (current_time - display_timer > display_off_delay) {
-      if (led_on) {
-        fade_out("blue", 10);
-      } // turn off blue LEDs if they are currently on (could be off if flashing in automatic dispense mode)
+      if (led_on) { // turn off LEDs if they are currently on (could be off if flashing in automatic dispense mode)
+        if (orange_led) {fade_out("orange", 10);}
+        else {fade_out("blue", 10);}
+      } 
       display_on = false;
       data_published = false;
       log_timer = millis(); // start log timer
@@ -711,7 +826,9 @@ void loop() {
   }
 
 
-  // check current time
-  check_time();
+  // check current time when system not in use
+  if (!display_on && !sensor_triggered && !button_pressed) {
+    check_time();
+  }
 
 }
