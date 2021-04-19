@@ -38,7 +38,7 @@
 #define time_check        300000      // how often to check the time from the NPT server
 #define dim_factor        10          // factor by which to dim the LEDs during afterhours times
 
-bool debug_mode = false;               // debug mode disables the valve from turning on and enables green lights when publishing (water usage data will still be calculated and published)
+bool debug_mode = false;              // debug mode disables the valve from turning on and enables green lights when publishing (water usage data will still be calculated and published)
 bool display_orange_led = false;      // ***NOTE: need to increase turn_off_delay to ~800 if this is true***     display orange LEDs in IR mode when object is out of sensor range when water is dispensing when set to true
 
 int led_brightness = 255;             // NeoPixel brightness (max = 255)
