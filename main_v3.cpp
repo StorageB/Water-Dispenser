@@ -712,8 +712,7 @@ void loop() {
           case_off = false;
         }
         else {
-          turn_on();
-          //not sure what this was doing:   if(!auto_dispense){}    
+          turn_on();  
         }
         
         // if automatically dispensing, calculate how long to leave water on
