@@ -10,11 +10,11 @@ This project is an for an electronic water dispenser connected to an under count
 - Bottle fill function
   - Press and hold button to select from a preset amount of water to dispense (16oz, 24oz, 32oz, etc.)
   - Purple LEDs flash to indicate which preset amount is being selected
-  - Preset values are loaded from Google Sheets document so they are easily adjustable
+  - Preset values are read from the Google Sheets document so they are easily adjustable
 - Filter change alert
   - Red LEDs flash to indicate the filter needs to be changed
   - Total water usage is loaded from Google Sheets document
-- Automatic LED dimming at night based on time of day scheduling 
+- Automatic LED dimming at night based on time of day scheduling entered in the Google Sheets document
 - 3D printed enclosure for hidden mounting under a cabinet
 
 ### Project Information
@@ -43,9 +43,6 @@ There are three different versions of the code posted for the ESP8266:
 
    This is the most recent version, and includes the code for all of the features listed above in the Project Description.
 
-A tutorial for how to log data to Google Sheets without the use of a third party service can be found here:
-https://github.com/StorageB/Google-Sheets-Logging
-
 
 
 
@@ -55,7 +52,7 @@ https://github.com/StorageB/Google-Sheets-Logging
 
 #### Google Sheets Logging
 
-Google sheets is used to log water usage data and for the system to read inputs such as what level the filter should be changed and what preset values to use for the automatic dispensing mode 
+Google sheets is used to log water usage data and for the system to read inputs such as when the filter should be changed, what preset values to use for the automatic dispensing mode, and for scheduling afterhours times.
 
 A tutorial for how to log data to Google Sheets with an ESP8266 module without the use of a third party service can be found here:
 https://github.com/StorageB/Google-Sheets-Logging
