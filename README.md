@@ -19,7 +19,7 @@ This project is an for an electronic water dispenser connected to an under count
 
 ### Project Information
 
-* [wiring diagram](https://github.com/StorageB/Water-Dispenser/blob/master/wiring-diagram.pdf)
+* [wiring diagram](https://github.com/StorageB/Water-Dispenser/blob/master/img/wiring-diagram.jpeg)
 
 * [parts list](https://github.com/StorageB/Water-Dispenser/blob/master/parts-list.md)
 
